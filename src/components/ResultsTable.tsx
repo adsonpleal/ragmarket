@@ -137,19 +137,29 @@ export default function ResultsTable({ records }: { records: ShopRecord[] }) {
       <thead>
         {table.getHeaderGroups().map((hg) => (
           <tr key={hg.id}>
-            {hg.headers.map((h) => (
-              <th
-                key={h.id}
-                onClick={h.column.getToggleSortingHandler()}
-                style={{
-                  cursor: h.column.getCanSort() ? "pointer" : "default",
-                }}
-              >
-                {flexRender(h.column.columnDef.header, h.getContext())}
-                {{ asc: " ▲", desc: " ▼" }[h.column.getIsSorted() as string] ??
-                  null}
-              </th>
-            ))}
+            {hg.headers.map((h) => {
+              const sorted = h.column.getIsSorted();
+              const ariaSort: "ascending" | "descending" | "none" =
+                sorted === "asc"
+                  ? "ascending"
+                  : sorted === "desc"
+                    ? "descending"
+                    : "none";
+              return (
+                <th
+                  key={h.id}
+                  scope="col"
+                  aria-sort={ariaSort}
+                  onClick={h.column.getToggleSortingHandler()}
+                  style={{
+                    cursor: h.column.getCanSort() ? "pointer" : "default",
+                  }}
+                >
+                  {flexRender(h.column.columnDef.header, h.getContext())}
+                  {{ asc: " ▲", desc: " ▼" }[sorted as string] ?? null}
+                </th>
+              );
+            })}
           </tr>
         ))}
       </thead>

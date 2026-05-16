@@ -193,6 +193,7 @@ export default function FilterSidebar({ records, allRecords, filters, onChange }
                 <button
                   key={id}
                   type="button"
+                  aria-pressed={selected}
                   className={"chip" + (selected ? " selected" : "")}
                   onClick={() => toggleItem(id)}
                   title={`ID ${id} · ${count} resultado${count > 1 ? "s" : ""}`}
@@ -217,6 +218,7 @@ export default function FilterSidebar({ records, allRecords, filters, onChange }
                 <button
                   key={id}
                   type="button"
+                  aria-pressed={selected}
                   className={"chip" + (selected ? " selected" : "")}
                   onClick={() => toggleCard(id)}
                   title={`ID ${id} · ${count} resultado${count > 1 ? "s" : ""}`}

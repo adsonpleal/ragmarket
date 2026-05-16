@@ -11,9 +11,16 @@
     "core:window:default",
     "core:webview:default",
     "core:app:default",
-    "clipboard-manager:default",
-    "clipboard-manager:allow-write-text",
     "opener:default",
-    "opener:allow-open-url"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://www.divine-pride.net/**" },
+        { "url": "https://divine-pride.net/**" },
+        { "url": "https://ragcalc.web.app/**" },
+        { "url": "https://ragnarecap.web.app/**" },
+        { "url": "https://github.com/**" }
+      ]
+    }
   ]
 }

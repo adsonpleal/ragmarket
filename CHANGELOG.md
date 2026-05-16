@@ -7,6 +7,38 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 
 ## [Unreleased]
 
+### Corrigido
+- Race entre `WinDivertShutdown` (chamado pelo thread principal em "Parar Gravação")
+  e `WinDivertClose` (chamado pelo thread de captura na saída do loop). O handle
+  agora é serializado por um `Mutex<Option<usize>>`; `stop_capture` apenas sinaliza
+  o shutdown para destravar o `recv`, e o `close` continua acontecendo na thread
+  de captura, evitando double-close / use-after-free.
+- Vazamento de listeners do Tauri em ciclos rápidos de stop→start: setup agora
+  checa um flag `aborted` entre cada `await listen()`, e cancela inscrições já
+  feitas se o efeito tiver sido limpo antes do registro completar.
+- Estouro de `header_len > total_len` em pacotes malformados — guarda explícita
+  em `parse_and_filter`.
+
+### Mudado
+- Eventos `packet-bytes` agora são acumulados em um buffer e despejados via
+  `setRecords` a cada 100ms, reduzindo re-renderizações do React durante
+  capturas intensas (antes era uma reconcatenação por pacote).
+- Permissão `opener:allow-open-url` agora tem escopo restrito a Divine Pride,
+  RagCalc, RagnaRecap e GitHub (antes era irrestrita).
+- `crate-type` da lib trocado de `["staticlib", "cdylib", "rlib"]` para
+  `["rlib"]` — desktop não precisa dos outros e o build de CI ficou ~3× mais
+  rápido.
+- `parseInt(hex.substr(...))` → `parseInt(hex.substring(...))` (substr está
+  marcado como legacy).
+- Workflow de release: pin do `softprops/action-gh-release` por SHA, verificação
+  de coerência entre tag e `package.json`/`Cargo.toml`, geração de
+  `SHA256SUMS.txt`, chave de cache do cargo agora inclui o hash do toolchain,
+  CR (`\r`) removidos do corpo do release extraído do CHANGELOG.
+
+### Acessibilidade
+- Chips de filtro (Itens, Cartas, Opções) agora expõem `aria-pressed`.
+- Cabeçalhos da tabela de resultados expõem `scope="col"` e `aria-sort`.
+
 ## [0.1.0] - 2026-05-16
 
 ### Adicionado

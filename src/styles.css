@@ -341,6 +341,31 @@ a.dp-link:hover {
   color: #8fbcff;
 }
 
+.app-footer {
+  flex: 0 0 auto;
+  padding: 10px 24px;
+  border-top: 1px solid #2c2c2c;
+  background: #141414;
+  color: #888;
+  text-align: center;
+  font-size: 12px;
+}
+
+.app-footer p {
+  margin: 4px 0;
+}
+
+a.ext-link {
+  color: #6aa6ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.ext-link:hover {
+  text-decoration: underline;
+  color: #8fbcff;
+}
+
 table.results .opt-list {
   margin: 0;
   padding-left: 14px;

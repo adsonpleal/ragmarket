@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCapture } from "./hooks/useCapture";
 import FilterSidebar, { EMPTY_FILTERS, Filters } from "./components/FilterSidebar";
 import ResultsTable from "./components/ResultsTable";
@@ -81,7 +82,42 @@ export default function App() {
           />
         )}
       </main>
+
+      <Footer />
     </div>
+  );
+}
+
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className="ext-link"
+      onClick={(e) => {
+        e.preventDefault();
+        openUrl(href).catch((err) => console.error("[ExtLink] openUrl failed:", err));
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="app-footer">
+      <p>
+        Veja também:{" "}
+        <ExtLink href="https://ragcalc.web.app/">RagCalc</ExtLink>
+        {" — calculadora de status · "}
+        <ExtLink href="https://ragnarecap.web.app/">RagnaRecap</ExtLink>
+        {" — análise de replays de Ragnarok Online."}
+      </p>
+      <p>
+        Projeto open source. Sugestões e bugs no{" "}
+        <ExtLink href="https://github.com/adsonpleal/ragmarket">GitHub</ExtLink>.
+      </p>
+    </footer>
   );
 }
 

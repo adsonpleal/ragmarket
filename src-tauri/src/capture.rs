@@ -14,12 +14,24 @@ use serde::Serialize;
 use std::ffi::{c_void, CString};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-#[derive(Default)]
+/// Handles are stored as `usize` so they can cross thread boundaries safely.
+/// `WinDivertShutdown` is documented as thread-safe and unblocks a concurrent
+/// `WinDivertRecv` on the same handle.
 pub struct CaptureState {
     pub running: Arc<AtomicBool>,
+    pub handle: Arc<Mutex<Option<usize>>>,
+}
+
+impl Default for CaptureState {
+    fn default() -> Self {
+        Self {
+            running: Arc::new(AtomicBool::new(false)),
+            handle: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -54,6 +66,7 @@ pub fn list_interfaces() -> io::Result<Vec<NetworkInterface>> {
     use windows::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
 
     const BUF_INITIAL: u32 = 16 * 1024;
+    const ERROR_BUFFER_OVERFLOW: u32 = 111;
     let mut size = BUF_INITIAL;
     let mut buf: Vec<u8> = vec![0; size as usize];
 
@@ -72,7 +85,7 @@ pub fn list_interfaces() -> io::Result<Vec<NetworkInterface>> {
         if rc == 0 {
             break;
         }
-        if rc == 111 {
+        if rc == ERROR_BUFFER_OVERFLOW {
             buf.resize(size as usize, 0);
             continue;
         }
@@ -142,12 +155,10 @@ pub fn list_interfaces() -> io::Result<Vec<NetworkInterface>> {
 
 // ---------- WinDivert FFI ----------
 
-// We use sniff mode (WINDIVERT_FLAG_SNIFF) so packets are observed without
-// being intercepted. The app never modifies or injects any packet.
-
 const WINDIVERT_LAYER_NETWORK: i32 = 0;
 const WINDIVERT_FLAG_SNIFF: u64 = 0x0001;
 const WINDIVERT_FLAG_RECV_ONLY: u64 = 0x0004; // never inject (read-only)
+const WINDIVERT_SHUTDOWN_BOTH: i32 = 0x3;
 
 type HANDLE = *mut c_void;
 const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
@@ -194,14 +205,19 @@ impl Default for WinDivertAddress {
 // ---------- capture loop ----------
 
 #[cfg(windows)]
-pub fn start_capture(app: AppHandle, state: State<CaptureState>, _ipv4: String) -> Result<(), String> {
+pub fn start_capture(
+    app: AppHandle,
+    state: State<CaptureState>,
+    _ipv4: String,
+) -> Result<(), String> {
     let running = state.running.clone();
     if running.swap(true, Ordering::SeqCst) {
         return Err("capture already running".into());
     }
 
+    let handle_store = state.handle.clone();
     std::thread::spawn(move || {
-        if let Err(e) = capture_loop(app.clone(), running.clone()) {
+        if let Err(e) = capture_loop(app.clone(), running.clone(), handle_store) {
             let _ = app.emit("capture-error", e.to_string());
         }
         running.store(false, Ordering::SeqCst);
@@ -212,17 +228,41 @@ pub fn start_capture(app: AppHandle, state: State<CaptureState>, _ipv4: String) 
 }
 
 #[cfg(not(windows))]
-pub fn start_capture(_app: AppHandle, _state: State<CaptureState>, _ipv4: String) -> Result<(), String> {
+pub fn start_capture(
+    _app: AppHandle,
+    _state: State<CaptureState>,
+    _ipv4: String,
+) -> Result<(), String> {
     Err("Windows only".into())
 }
 
 pub fn stop_capture(state: State<CaptureState>) -> Result<(), String> {
     state.running.store(false, Ordering::SeqCst);
+    // Take the handle from the store. If still present, signal WinDivert to
+    // unblock the recv loop. The capture thread will then exit naturally and
+    // close the handle in its cleanup. The Mutex serialises ownership, so the
+    // capture thread won't double-shutdown or double-close.
+    let handle_opt = {
+        let guard = state.handle.lock().unwrap();
+        // We only take a *copy* here, leaving the handle in place so the
+        // capture loop can still find and close it. The shutdown wakes recv;
+        // the close still happens on the capture-thread side.
+        *guard
+    };
+    if let Some(h) = handle_opt {
+        unsafe {
+            WinDivertShutdown(h as HANDLE, WINDIVERT_SHUTDOWN_BOTH);
+        }
+    }
     Ok(())
 }
 
 #[cfg(windows)]
-fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
+fn capture_loop(
+    app: AppHandle,
+    running: Arc<AtomicBool>,
+    handle_store: Arc<Mutex<Option<usize>>>,
+) -> io::Result<()> {
     // WinDivert filter language uses C-style `&&` and `||`, not `and`/`or`.
     let filter = "tcp && (tcp.SrcPort == 6900 || tcp.DstPort == 6900 \
                        || tcp.SrcPort == 6951 || tcp.DstPort == 6951 \
@@ -230,7 +270,7 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
                        || (tcp.SrcPort >= 22000 && tcp.SrcPort <= 22100) \
                        || (tcp.DstPort >= 22000 && tcp.DstPort <= 22100))";
 
-    let filter_c = CString::new(filter).unwrap();
+    let filter_c = CString::new(filter).expect("filter contains NUL byte");
     eprintln!("[capture] opening WinDivert handle (filter: {filter})");
 
     let handle = unsafe {
@@ -249,6 +289,9 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
     }
     eprintln!("[capture] WinDivert handle opened. Entering recv loop...");
 
+    // Publish the handle so `stop_capture` can call `WinDivertShutdown` on it.
+    *handle_store.lock().unwrap() = Some(handle as usize);
+
     let _ = app.emit("capture-started", ());
 
     let mut stats = CaptureStats {
@@ -260,18 +303,7 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
     let mut packet = vec![0u8; 65535];
     let mut addr = WinDivertAddress::default();
 
-    // Spawn a watchdog thread to call WinDivertShutdown when stop is requested,
-    // since WinDivertRecv is blocking.
-    let shutdown_running = running.clone();
-    let shutdown_handle = handle as usize;
-    std::thread::spawn(move || {
-        while shutdown_running.load(Ordering::SeqCst) {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-        unsafe {
-            WinDivertShutdown(shutdown_handle as HANDLE, 0x3 /* WINDIVERT_SHUTDOWN_BOTH */);
-        }
-    });
+    let mut recv_err: Option<io::Error> = None;
 
     while running.load(Ordering::SeqCst) {
         let mut recv_len: u32 = 0;
@@ -285,37 +317,21 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
             )
         };
         if rc == 0 {
-            // recv failed. If we're shutting down, exit cleanly; otherwise error.
+            // recv failed. If we're shutting down (or shutdown was signaled),
+            // exit cleanly; otherwise propagate the error.
             if !running.load(Ordering::SeqCst) {
                 break;
             }
-            let err = io::Error::last_os_error();
-            eprintln!("[capture] WinDivertRecv failed: {err}");
-            unsafe { WinDivertClose(handle) };
-            return Err(err);
+            recv_err = Some(io::Error::last_os_error());
+            eprintln!("[capture] WinDivertRecv failed: {:?}", recv_err);
+            break;
         }
 
         let datagram = &packet[..recv_len as usize];
         stats.packets_seen += 1;
 
-        if stats.packets_seen <= 3 {
-            eprintln!(
-                "[capture] packet #{}: {} bytes, first 20: {:02x?}",
-                stats.packets_seen,
-                recv_len,
-                &datagram[..(recv_len as usize).min(20)],
-            );
-        }
-
         if let Some(ev) = parse_and_filter(datagram) {
             stats.matched += 1;
-            if stats.matched <= 3 {
-                eprintln!(
-                    "[capture] MATCHED: {}:{} -> {}:{} ({} payload bytes)",
-                    ev.src_ip, ev.src_port, ev.dst_ip, ev.dst_port,
-                    ev.payload_hex.len() / 2,
-                );
-            }
             let _ = app.emit("packet-bytes", ev);
         }
 
@@ -337,8 +353,21 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
         "[capture] stopping. final: packets_seen={}, matched={}",
         stats.packets_seen, stats.matched,
     );
-    unsafe { WinDivertClose(handle) };
     let _ = app.emit("capture-stats", stats.clone());
+
+    // Take ownership of the handle for closing. If `stop_capture` already
+    // observed the handle in the mutex, our `take()` here still wins for the
+    // close because `WinDivertClose` is only ever called from this thread.
+    let to_close = handle_store.lock().unwrap().take();
+    if let Some(h) = to_close {
+        unsafe {
+            WinDivertClose(h as HANDLE);
+        }
+    }
+
+    if let Some(e) = recv_err {
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -346,6 +375,9 @@ fn capture_loop(app: AppHandle, running: Arc<AtomicBool>) -> io::Result<()> {
 fn parse_and_filter(datagram: &[u8]) -> Option<PacketEvent> {
     let ip = crate::packet::parse_ipv4(datagram)?;
     if ip.proto != 6 {
+        return None;
+    }
+    if ip.header_len > ip.total_len {
         return None;
     }
     let tcp_buf = &datagram[ip.header_len..ip.total_len];

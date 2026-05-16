@@ -56,8 +56,3 @@ export async function getItem(id: number): Promise<DivineItem | null> {
 
 // Cards are items in RO, so they live in the same DB.
 export const getCard = getItem;
-
-/** Force a fresh fetch (e.g., after shipping a new DB version). */
-export function clearCache(): void {
-  dbPromise = null;
-}

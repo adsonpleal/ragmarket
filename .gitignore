@@ -1,12 +1,9 @@
 # Logs
-logs
 *.log
-npm-debug.log*
 
-# Dependencies
+# Dependencies & build output
 node_modules
 dist
-dist-ssr
 
 # Editor / OS
 .vscode/*
@@ -15,7 +12,7 @@ dist-ssr
 .DS_Store
 Thumbs.db
 
-# Tauri build output (don't commit the build target)
+# Tauri build output
 src-tauri/target
 src-tauri/gen
 

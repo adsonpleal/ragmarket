@@ -28,7 +28,7 @@ export type CaptureStats = {
 function hexToBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    out[i / 2] = parseInt(hex.substr(i, 2), 16);
+    out[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
   return out;
 }
@@ -41,9 +41,10 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
 }
 
 function streamKey(p: PacketEvent): string {
-  // The "stream" we care about is the server-to-client direction on a given 4-tuple.
   return `${p.src_ip}:${p.src_port}->${p.dst_ip}:${p.dst_port}`;
 }
+
+const FLUSH_INTERVAL_MS = 100;
 
 export function useCapture() {
   const [interfaces, setInterfaces] = useState<NetworkInterface[]>([]);
@@ -54,16 +55,38 @@ export function useCapture() {
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Per-stream byte buffers (re-assembled in order of arrival).
-  // Out-of-order TCP segments would still bite us, but on a healthy
-  // local network they're rare for a single connection.
+  // Per-stream byte buffers (reassembled in order of arrival).
   const streams = useRef<Map<string, Uint8Array>>(new Map());
+  // Pending batched updates — flushed every FLUSH_INTERVAL_MS to keep React
+  // re-renders bounded under heavy packet load.
+  const pendingRecords = useRef<ShopRecord[]>([]);
+  const pendingPages = useRef(0);
+  const flushTimer = useRef<number | null>(null);
+
+  const flushPending = useCallback(() => {
+    flushTimer.current = null;
+    const batch = pendingRecords.current;
+    const pages = pendingPages.current;
+    if (batch.length === 0 && pages === 0) return;
+    pendingRecords.current = [];
+    pendingPages.current = 0;
+    if (batch.length > 0) {
+      setRecords((rs) => rs.concat(batch));
+    }
+    if (pages > 0) {
+      setPageCount((c) => c + pages);
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimer.current != null) return;
+    flushTimer.current = window.setTimeout(flushPending, FLUSH_INTERVAL_MS);
+  }, [flushPending]);
 
   const refreshInterfaces = useCallback(async () => {
     try {
       const ifs = (await invoke("list_interfaces")) as NetworkInterface[];
       setInterfaces(ifs);
-      // Default to the first non-loopback interface that has an IP.
       const def = ifs.find((i) => !i.is_loopback);
       if (def) setSelectedIp(def.ipv4);
     } catch (e) {
@@ -78,69 +101,71 @@ export function useCapture() {
   // Listen for backend events whenever we're recording.
   useEffect(() => {
     if (status !== "recording") return;
-    let unlistens: UnlistenFn[] = [];
-    let active = true;
+    const aborted = { current: false };
+    const unsubscribers: UnlistenFn[] = [];
 
-    const setup = async () => {
-      console.log("[useCapture] setting up listeners");
-      let totalPacketEvents = 0;
-      let totalPagesFound = 0;
-      const u1 = await listen<PacketEvent>("packet-bytes", (e) => {
-        if (!active) return;
-        totalPacketEvents += 1;
-        if (totalPacketEvents <= 5 || totalPacketEvents % 20 === 0) {
-          console.log(
-            `[useCapture] packet-bytes #${totalPacketEvents}:`,
-            e.payload,
-          );
-        }
-        const key = streamKey(e.payload);
-        const prev = streams.current.get(key) ?? new Uint8Array();
-        const merged = concat(prev, hexToBytes(e.payload.payload_hex));
-        const { pages, tail } = extract0836Packets(merged);
-        streams.current.set(key, tail);
-        if (pages.length > 0) {
-          totalPagesFound += pages.length;
-          console.log(
-            `[useCapture] decoded ${pages.length} page(s) from stream ${key} (total pages so far: ${totalPagesFound})`,
-            pages.map((p) => ({
-              page: p.page,
-              moreResults: p.moreResults,
-              records: p.records.length,
-            })),
-          );
-          setRecords((rs) => rs.concat(pages.flatMap((p) => p.records)));
-          setPageCount((c) => c + pages.length);
-        }
-      });
-      const u2 = await listen<CaptureStats>("capture-stats", (e) => {
-        if (!active) return;
-        setStats(e.payload);
-      });
-      const u3 = await listen<string>("capture-error", (e) => {
-        if (!active) return;
-        console.error("[useCapture] capture-error:", e.payload);
-        setError(String(e.payload));
-      });
-      const u4 = await listen("capture-stopped", () => {
-        if (!active) return;
-        console.log("[useCapture] capture-stopped");
-        setStatus((s) => (s === "recording" ? "stopped" : s));
-      });
-      console.log("[useCapture] listeners registered");
-      if (active) {
-        unlistens.push(u1, u2, u3, u4);
-      } else {
-        [u1, u2, u3, u4].forEach((u) => u());
+    // Helper: subscribe, and if the effect already aborted between awaits,
+    // immediately unsubscribe and stop registering more.
+    async function subscribe<T>(
+      event: string,
+      handler: (e: { payload: T }) => void,
+    ): Promise<boolean> {
+      const u = await listen<T>(event, handler as never);
+      if (aborted.current) {
+        u();
+        return false;
       }
-    };
-    setup();
+      unsubscribers.push(u);
+      return true;
+    }
+
+    (async () => {
+      if (
+        !(await subscribe<PacketEvent>("packet-bytes", (e) => {
+          const key = streamKey(e.payload);
+          const prev = streams.current.get(key) ?? new Uint8Array();
+          const merged = concat(prev, hexToBytes(e.payload.payload_hex));
+          const { pages, tail } = extract0836Packets(merged);
+          streams.current.set(key, tail);
+          if (pages.length > 0) {
+            for (const p of pages) {
+              for (const r of p.records) pendingRecords.current.push(r);
+            }
+            pendingPages.current += pages.length;
+            scheduleFlush();
+          }
+        }))
+      )
+        return;
+      if (
+        !(await subscribe<CaptureStats>("capture-stats", (e) =>
+          setStats(e.payload),
+        ))
+      )
+        return;
+      if (
+        !(await subscribe<string>("capture-error", (e) => {
+          console.error("[useCapture] capture-error:", e.payload);
+          setError(String(e.payload));
+        }))
+      )
+        return;
+      await subscribe("capture-stopped", () =>
+        setStatus((s) => (s === "recording" ? "stopped" : s)),
+      );
+    })();
 
     return () => {
-      active = false;
-      unlistens.forEach((u) => u());
+      aborted.current = true;
+      unsubscribers.forEach((u) => u());
+      // Flush any pending records so the user sees them on stop.
+      if (flushTimer.current != null) {
+        clearTimeout(flushTimer.current);
+        flushTimer.current = null;
+      }
+      flushPending();
     };
-  }, [status]);
+  }, [status, scheduleFlush, flushPending]);
 
   const start = useCallback(async () => {
     if (!selectedIp) {
@@ -151,6 +176,8 @@ export function useCapture() {
     setPageCount(0);
     setStats({ packets_seen: 0, matched: 0 });
     streams.current.clear();
+    pendingRecords.current = [];
+    pendingPages.current = 0;
     setError(null);
     try {
       await invoke("start_capture", { ipv4: selectedIp });
@@ -174,6 +201,8 @@ export function useCapture() {
     setRecords([]);
     setPageCount(0);
     streams.current.clear();
+    pendingRecords.current = [];
+    pendingPages.current = 0;
     setError(null);
   }, []);
 
@@ -182,6 +211,8 @@ export function useCapture() {
     setRecords([]);
     setPageCount(0);
     streams.current.clear();
+    pendingRecords.current = [];
+    pendingPages.current = 0;
   }, []);
 
   return {
