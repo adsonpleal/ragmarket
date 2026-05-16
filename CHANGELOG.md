@@ -7,6 +7,16 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-16
+
+### Corrigido
+- Crash no startup com "Entry Point Not Found: TaskDialogIndirect" no
+  `comctl32.dll`: o manifesto custom (que força execução como Administrador)
+  estava sobrescrevendo o manifesto default do Tauri, derrubando a dependência
+  `Microsoft.Windows.Common-Controls v6.0`. Sem ela, o Windows carregava o
+  `comctl32` legado (v5), que não exporta `TaskDialogIndirect`. Re-adicionada
+  a `assemblyIdentity` no manifesto embutido pelo `build.rs`.
+
 ## [0.1.0] - 2026-05-16
 
 ### Adicionado
@@ -65,5 +75,6 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 - `opener:allow-open-url` com escopo restrito a Divine Pride, RagCalc,
   RagnaRecap e GitHub (antes era irrestrito)
 
-[Unreleased]: https://github.com/adsonpleal/ragmarket/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/adsonpleal/ragmarket/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/adsonpleal/ragmarket/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/adsonpleal/ragmarket/releases/tag/v0.1.0

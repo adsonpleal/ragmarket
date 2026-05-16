@@ -18,8 +18,25 @@ fn main() {
     // The manifest goes into the .exe itself, so it applies to every launch
     // (Start Menu shortcut, direct double-click, etc.) without the user
     // touching the file's Properties dialog.
+    //
+    // The Common-Controls v6 dependency is required: Tauri's WebView2 host
+    // calls TaskDialogIndirect, which only exists in comctl32 v6. Without
+    // this assemblyIdentity, Windows loads legacy comctl32 v5 and the .exe
+    // crashes on launch with "Entry Point Not Found: TaskDialogIndirect".
     let admin_manifest = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
