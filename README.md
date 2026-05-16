@@ -8,6 +8,16 @@ Somente leitura: cada byte exibido vem do servidor para o seu próprio cliente.
 Nenhum pacote é construído ou enviado. Nenhuma proteção anti-cheat é
 atravessada.
 
+## ⬇ Download
+
+[**ragmarket-v0.1.0-setup.exe**](https://github.com/adsonpleal/ragmarket/releases/latest/download/ragmarket-v0.1.0-setup.exe)
+— instalador único para Windows 10/11 (~10 MB). Já inclui o WinDivert
+embutido; basta executar e seguir o instalador. Depois de instalado, rode o
+Ragmarket pelo atalho do menu Iniciar **como Administrador**.
+
+Veja também a [página de releases](https://github.com/adsonpleal/ragmarket/releases)
+para versões anteriores e o `SHA256SUMS.txt` correspondente.
+
 ---
 
 ## FAQ

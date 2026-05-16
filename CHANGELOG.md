@@ -7,38 +7,6 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 
 ## [Unreleased]
 
-### Corrigido
-- Race entre `WinDivertShutdown` (chamado pelo thread principal em "Parar Gravação")
-  e `WinDivertClose` (chamado pelo thread de captura na saída do loop). O handle
-  agora é serializado por um `Mutex<Option<usize>>`; `stop_capture` apenas sinaliza
-  o shutdown para destravar o `recv`, e o `close` continua acontecendo na thread
-  de captura, evitando double-close / use-after-free.
-- Vazamento de listeners do Tauri em ciclos rápidos de stop→start: setup agora
-  checa um flag `aborted` entre cada `await listen()`, e cancela inscrições já
-  feitas se o efeito tiver sido limpo antes do registro completar.
-- Estouro de `header_len > total_len` em pacotes malformados — guarda explícita
-  em `parse_and_filter`.
-
-### Mudado
-- Eventos `packet-bytes` agora são acumulados em um buffer e despejados via
-  `setRecords` a cada 100ms, reduzindo re-renderizações do React durante
-  capturas intensas (antes era uma reconcatenação por pacote).
-- Permissão `opener:allow-open-url` agora tem escopo restrito a Divine Pride,
-  RagCalc, RagnaRecap e GitHub (antes era irrestrita).
-- `crate-type` da lib trocado de `["staticlib", "cdylib", "rlib"]` para
-  `["rlib"]` — desktop não precisa dos outros e o build de CI ficou ~3× mais
-  rápido.
-- `parseInt(hex.substr(...))` → `parseInt(hex.substring(...))` (substr está
-  marcado como legacy).
-- Workflow de release: pin do `softprops/action-gh-release` por SHA, verificação
-  de coerência entre tag e `package.json`/`Cargo.toml`, geração de
-  `SHA256SUMS.txt`, chave de cache do cargo agora inclui o hash do toolchain,
-  CR (`\r`) removidos do corpo do release extraído do CHANGELOG.
-
-### Acessibilidade
-- Chips de filtro (Itens, Cartas, Opções) agora expõem `aria-pressed`.
-- Cabeçalhos da tabela de resultados expõem `scope="col"` e `aria-sort`.
-
 ## [0.1.0] - 2026-05-16
 
 ### Adicionado
@@ -64,7 +32,38 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 - Tabela de resultados ordenável (TanStack Table)
 - Clique no nome do item / carta abre a página do Divine Pride no navegador
 - Interface em pt-BR
-- Workflow do GitHub Actions para gerar `.exe` + instaladores MSI/NSIS
+- Footer com links para projetos relacionados (RagCalc, RagnaRecap) e GitHub
+- Acessibilidade: `aria-pressed` nos chips de filtro e `scope="col"` + `aria-sort` nos cabeçalhos da tabela
+- Workflow do GitHub Actions: build manual via `workflow_dispatch`, verifica
+  coerência de versão (`package.json` ↔ `Cargo.toml` ↔ tag), gera
+  `SHA256SUMS.txt`, ação `softprops/action-gh-release` pinada por SHA, cache
+  do cargo com hash do toolchain incluído
+- Bundle: instalador NSIS único (`ragmarket-vX.Y.Z-setup.exe`) que já inclui
+  `WinDivert.dll` e `WinDivert64.sys`
+
+### Robustez
+- Race entre `WinDivertShutdown` (chamado pelo thread principal ao "Parar
+  Gravação") e `WinDivertClose` (chamado pelo thread de captura na saída do
+  loop) eliminada: o handle é serializado por um `Mutex<Option<usize>>`;
+  `stop_capture` apenas sinaliza o shutdown para destravar o `recv`, e o
+  `close` continua acontecendo na thread de captura, evitando double-close /
+  use-after-free
+- Listeners do Tauri não vazam mais em ciclos rápidos de stop→start: setup
+  checa um flag `aborted` entre cada `await listen()` e desinscreve
+  registros que aconteceram após a limpeza do efeito
+- Guarda explícita contra `header_len > total_len` em pacotes IP malformados
+- `Stop & Filter` faz flush das pendências antes de transicionar
+
+### Performance
+- Eventos `packet-bytes` são acumulados num buffer e despejados via
+  `setRecords` a cada 100 ms, reduzindo re-renderizações do React durante
+  capturas intensas
+- `crate-type` da lib reduzido para `["rlib"]` — desktop não precisa de
+  `staticlib`/`cdylib`; build de CI ~3× mais rápido
+
+### Segurança
+- `opener:allow-open-url` com escopo restrito a Divine Pride, RagCalc,
+  RagnaRecap e GitHub (antes era irrestrito)
 
 [Unreleased]: https://github.com/adsonpleal/ragmarket/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/adsonpleal/ragmarket/releases/tag/v0.1.0
