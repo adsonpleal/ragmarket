@@ -696,23 +696,19 @@ table.results .opt-list {
   padding: 0 24px;
 }
 
-.favorites-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.favorite-row {
-  display: flex;
+.fav-add-form {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid #232323;
+  gap: 6px;
 }
 
-.favorite-name {
-  flex: 1;
-  min-width: 0;
+.fav-add-form input[type="text"] {
+  width: 110px;
+}
+
+.fav-add-feedback {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 

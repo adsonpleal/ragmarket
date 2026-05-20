@@ -1,5 +1,7 @@
 mod capture;
 mod connections;
+mod files;
+mod market;
 mod packet;
 mod process;
 
@@ -39,6 +41,7 @@ fn stop_capture(state: State<CaptureState>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(CaptureState::default())
         .manage(ConnectionsState::default())
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +50,8 @@ pub fn run() {
             stop_capture,
             connections::discover_clients_cmd,
             connections::set_client_selection,
+            market::fetch_market_extremes,
+            files::save_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,7 @@ import { ItemLinks } from "./ItemLinks";
 import { SortableTable } from "./SortableTable";
 import { cardsColumn, optionsColumn, starColumn } from "./itemColumns";
 import type { InventorySnapshots } from "../hooks/useCapture";
+import { downloadCsv, toCsv } from "../lib/csv";
 
 const ch = createColumnHelper<InventoryItem>();
 
@@ -110,6 +111,38 @@ export function MyItemsView({ inventory, server }: Props) {
 
   const totalCount = allItems.length;
 
+  const handleExportCsv = () => {
+    const rows = filtered.map((it) => {
+      const name = itemNames.get(`item:${it.itemID}`) ?? `Item ${it.itemID}`;
+      const cardsText = it.cards
+        .filter((c) => c > 0)
+        .map((c) => cardNames.get(`card:${c}`) ?? `Carta ${c}`)
+        .join("; ");
+      const opcoesText = it.options.map((o) => o.text).join("; ");
+      return {
+        id: it.itemID,
+        nome: name,
+        qtd: it.amount,
+        refino: it.isEquipKind ? it.refine : "",
+        cartas: cardsText,
+        opcoes: opcoesText,
+        fonte: invTypeLabel(it.source),
+      };
+    });
+    const csv = toCsv(rows, [
+      "id",
+      "nome",
+      "qtd",
+      "refino",
+      "cartas",
+      "opcoes",
+      "fonte",
+    ]);
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    void downloadCsv(`meus-itens-${stamp}.csv`, csv);
+  };
+
   return (
     <div className="filter-screen">
       <aside className="filter-sidebar">
@@ -142,6 +175,16 @@ export function MyItemsView({ inventory, server }: Props) {
             <span>
               {filtered.length} de {totalCount} itens
             </span>
+          </div>
+          <div className="results-header-actions">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={filtered.length === 0}
+              title="Exportar a lista visível como CSV"
+            >
+              Exportar CSV
+            </button>
           </div>
         </div>
         {totalCount === 0 ? (

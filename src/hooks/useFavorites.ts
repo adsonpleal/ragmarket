@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { usePersistentValue } from "./usePersistentValue";
 
 const EMPTY: number[] = [];
@@ -14,7 +14,7 @@ export function useFavorites() {
     serialize: (v) => JSON.stringify(v),
   });
 
-  const favorites = new Set(list);
+  const favorites = useMemo(() => new Set(list), [list]);
 
   const toggle = useCallback(
     (id: number) => {
@@ -27,7 +27,20 @@ export function useFavorites() {
     [list, setList],
   );
 
+  // Returns true if the ID was added, false if invalid or already favorited.
+  // Unlike `toggle`, calling this twice with the same ID is a no-op the
+  // second time — which is what the "add by ID" input needs.
+  const add = useCallback(
+    (id: number): boolean => {
+      if (!Number.isFinite(id) || id <= 0) return false;
+      if (list.includes(id)) return false;
+      setList([...list, id]);
+      return true;
+    },
+    [list, setList],
+  );
+
   const isFavorite = useCallback((id: number) => favorites.has(id), [favorites]);
 
-  return { favorites, toggle, isFavorite };
+  return { favorites, toggle, add, isFavorite };
 }

@@ -7,6 +7,57 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-20
+
+### Adicionado
+- **Adicionar favorito por ID**: campo de texto + botão "Adicionar" no
+  cabeçalho da aba **Favoritos**. IDs ainda não vistos na captura
+  funcionam — caem no fallback "Item NNNN" do `useItemNames` se não
+  estiverem no banco estático. Mensagem inline informa quando o ID
+  é inválido ou já está nos favoritos.
+- **Atualizar preços** em Favoritos: botão que dispara uma busca no
+  Catálogo de Vendas do gnjoylatam por cada favorito e mostra **Mín**
+  e **Máx** em duas novas colunas. Implementado num novo comando Rust
+  `fetch_market_extremes` que faz duas requisições em paralelo
+  (`sortType=LOW_PRICE` e `HIGH_PRICE`) via `tokio::join!`, extrai o
+  primeiro `itemPrice` correspondente ao `itemId` do payload RSC do
+  Next.js da página e filtra por ID (a busca do gnjoylatam é por
+  substring do nome). Concorrência limitada a 4 fetches simultâneos
+  no frontend.
+- **Exportar Meus Itens em CSV**: botão **Exportar CSV** na aba
+  **Meus Itens** abre um diálogo nativo de "Salvar como…" (via
+  `tauri-plugin-dialog`) e grava as colunas `id`, `nome`, `qtd`,
+  `refino`, `cartas`, `opcoes`, `fonte` da lista filtrada. Helper
+  novo em `src/lib/csv.ts` (escapa vírgula/aspas/quebra de linha,
+  CRLF, BOM UTF-8 para o Excel reconhecer acentos).
+- Script `tools/scrape-dp-items.mjs` para refrescar
+  `public/db/dp-item.json` contra a lista paginada de itens do
+  divine-pride.net. Cookies via env vars `DP_ASPXAUTH` e
+  `DP_ASPNET_SESSION`; throttle de 500 ms entre páginas; merge sobre
+  o JSON existente preservando nomes reais já presentes quando a
+  fonte responde com placeholder `[PH] Item Name`.
+
+### Alterado
+- **Aba Favoritos** migrada de lista (`<ul>`) para `<SortableTable>` —
+  consistente com Catálogo e Meus Itens. Colunas: ⭐, Item, Mín, Máx,
+  DP, Mercado. Os links **DP** e **Mercado** ficam em colunas próprias
+  em vez de empilhados sob o nome do item.
+- Banco estático `public/db/dp-item.json` refrescado contra o
+  divine-pride.net: 31.926 → 32.810 entradas (+884 novos IDs,
+  ~29 mil nomes reescritos). Itens recentes que antes apareciam como
+  "Item NNNN" / "Carta NNNN" no app agora têm nome legível.
+
+### Performance
+- `useFavorites` agora memoiza o `Set` derivado da lista persistida.
+  Antes era `new Set(list)` em cada chamada do hook (várias por
+  render entre App, FavoritesView e MyItemsView), fazendo qualquer
+  `useMemo`/`useCallback` que dependesse de `fav.favorites`
+  recomputar sem motivo.
+- O comando `fetch_market_extremes` reusa um único `reqwest::Client`
+  e um `Regex` compilado, guardados em `OnceLock<...>`. Antes ambos
+  eram reconstruídos em cada chamada, descartando o pool de
+  conexões TLS do reqwest.
+
 ## [0.3.0] - 2026-05-19
 
 ### Adicionado
@@ -180,7 +231,8 @@ e o versionamento segue o [Versionamento Semântico](https://semver.org/lang/pt-
 - `opener:allow-open-url` com escopo restrito a Divine Pride, RagCalc,
   RagnaRecap e GitHub (antes era irrestrito)
 
-[Unreleased]: https://github.com/adsonpleal/ragmarket/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/adsonpleal/ragmarket/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/adsonpleal/ragmarket/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adsonpleal/ragmarket/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/adsonpleal/ragmarket/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/adsonpleal/ragmarket/compare/v0.1.0...v0.1.1

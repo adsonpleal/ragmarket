@@ -7,8 +7,13 @@ cliente enquanto você joga latamRO e decodifica:
   ordenável e filtrável.
 - **Meus Itens**: o que está no seu inventário, carrinho, armazém Kafra e
   armazém do clã — populado automaticamente conforme o servidor envia.
-- **Favoritos**: itens marcados com ⭐, persistidos entre sessões e com
-  links rápidos para o Divine Pride e para a busca do Mercado.
+  Botão **Exportar CSV** salva a lista visível num arquivo via diálogo
+  nativo de salvar.
+- **Favoritos**: itens marcados com ⭐ (ou adicionados por ID direto pelo
+  cabeçalho), persistidos entre sessões e com links rápidos para o
+  Divine Pride e para a busca do Mercado. Botão **Atualizar preços**
+  busca o **Mín** e **Máx** atuais do Catálogo de Vendas para cada
+  favorito.
 
 Somente leitura: cada byte exibido vem do servidor para o seu próprio cliente.
 Nenhum pacote é construído ou enviado. Nenhuma proteção anti-cheat é
@@ -16,7 +21,7 @@ atravessada.
 
 ## ⬇ Download
 
-[**ragmarket-v0.3.0-setup.exe**](https://github.com/adsonpleal/ragmarket/releases/latest/download/ragmarket-v0.3.0-setup.exe)
+[**ragmarket-v0.4.0-setup.exe**](https://github.com/adsonpleal/ragmarket/releases/latest/download/ragmarket-v0.4.0-setup.exe)
 — instalador único para Windows 10/11 (~10 MB). Já inclui o WinDivert
 embutido; basta executar e seguir o instalador. O Ragmarket é configurado
 para sempre rodar como Administrador (vai aparecer um UAC ao iniciar — isso
@@ -255,9 +260,15 @@ Três abas ficam disponíveis durante a sessão:
 - **Meus Itens** — inventário e carrinho aparecem sozinhos ao selecionar
   o personagem; armazém Kafra e armazém do clã aparecem na primeira vez
   que você abre cada NPC. Filtro de fonte (chips Inventário /
-  Carrinho / Kafra / Clã).
+  Carrinho / Kafra / Clã). Botão **Exportar CSV** salva a lista
+  visível (ID, nome, qtd, refino, cartas, opções, fonte) via diálogo
+  nativo de salvar.
 - **Favoritos** — itens marcados com ⭐ em qualquer das duas tabelas
-  anteriores. Persiste entre sessões.
+  anteriores, ou adicionados manualmente pelo campo **ID do item**
+  no cabeçalho. Persiste entre sessões. Tabela com colunas Item,
+  **Mín** e **Máx**, mais links DP e Mercado por linha. O botão
+  **Atualizar preços** dispara uma busca paralela no Catálogo de
+  Vendas e popula as colunas de preço.
 
 Em todas as tabelas, clique no nome de um item ou carta pra abrir o
 Divine Pride. Em **Meus Itens** e **Favoritos** há também um link
